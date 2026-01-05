@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora Freelance Pro 2.0</title>
+    <style>
+        :root { --primary: #2563eb; --danger: #ef4444; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 2rem; display: flex; justify-content: center; }
+        .container { max-width: 1100px; width: 100%; }
+        h1 { text-align: center; margin-bottom: 2rem; color: var(--primary); }
+        
+        /* Panel de Control */
+        .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 1.5rem; align-items: end; }
+        .control-group { display: flex; flex-direction: column; gap: 0.5rem; }
+        label { font-weight: 600; font-size: 0.85rem; color: #64748b; }
+        input { padding: 0.6rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 1rem; width: 100%; box-sizing: border-box; }
+        input:focus { outline: 2px solid var(--primary); border-color: transparent; }
+        
+        /* Botones */
+        button { cursor: pointer; padding: 0.6rem 1rem; border: none; border-radius: 6px; font-weight: 600; transition: all 0.2s; }
+        .btn-add { background: var(--primary); color: white; }
+        .btn-add:hover { background: #1d4ed8; }
+        .delete-col { color: var(--danger); cursor: pointer; font-size: 0.8rem; margin-left: 5px; text-decoration: none; }
+        .delete-col:hover { font-weight: bold; }
+
+        /* Tabla */
+        .table-container { overflow-x: auto; background: var(--card); border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; min-width: 800px; }
+        th, td { padding: 1rem; text-align: right; border-bottom: 1px solid #e2e8f0; font-variant-numeric: tabular-nums; }
+        th { text-align: center; background: #f1f5f9; font-weight: 700; color: #475569; position: relative; }
+        td:first-child { text-align: left; font-weight: 600; color: #334155; position: sticky; left: 0; background: white; border-right: 2px solid #f1f5f9; }
+        
+        /* Filas Especiales */
+        .row-neto { background-color: #f0f9ff; font-weight: 600; color: var(--primary); }
+        .row-final { background-color: #f0fdf4; font-weight: 800; color: #16a34a; font-size: 1.1rem; border-bottom: none; }
+        .row-rete { color: var(--danger); }
+        
+        .add-section { display: flex; gap: 0.5rem; align-items: flex-end; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Calculadora Salarial Freelance 2.0</h1>
+    
+    <div class="controls">
+        <div class="control-group">
+            <label>TRM (COP/USD)</label>
+            <input type="number" id="trm" value="3800" oninput="calculate()">
+        </div>
+        <div class="control-group">
+            <label>Gastos Fijos (COP)</label>
+            <input type="number" id="expenses" value="706000" oninput="calculate()">
+        </div>
+        <div class="control-group">
+            <label>Retención Fuente (%)</label>
+            <input type="number" id="retePct" value="0" placeholder="Ej: 10" oninput="calculate()">
+        </div>
+        
+        <div class="control-group">
+            <label>Nuevo Escenario (USD)</label>
+            <div class="add-section">
+                <input type="number" id="newSalaryInput" placeholder="Ej: 1800">
+                <button class="btn-add" onclick="addSalary()">+</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table id="salaryTable">
+            </table>
+    </div>
+</div>
+
+<script>
+    // Estado inicial
+    let salaries = [1200, 1300, 1400, 1500];
+
+    const formatCOP = (num) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(num);
+
+    function addSalary() {
+        const input = document.getElementById('newSalaryInput');
+        const val = parseFloat(input.value);
+        if (val && !salaries.includes(val)) {
+            salaries.push(val);
+            salaries.sort((a, b) => a - b); // Mantener orden ascendente
+            calculate();
+            input.value = ''; // Limpiar input
+        }
+    }
+
+    function removeSalary(val) {
+        salaries = salaries.filter(s => s !== val);
+        calculate();
+    }
+
+    function calculate() {
+        const trm = parseFloat(document.getElementById('trm').value) || 0;
+        const expenses = parseFloat(document.getElementById('expenses').value) || 0;
+        const retePct = parseFloat(document.getElementById('retePct').value) || 0;
+        const smmlv = 1423500;
+
+        let theadHtml = `<thead><tr><th>Concepto</th>`;
+        
+        // Estructura de datos para las filas
+        const data = {
+            gross: { label: "Ingreso Bruto (COP)", values: [] },
+            ibc: { label: "IBC (Base 40%)", values: [] },
+            health: { label: "Salud (12.5%)", values: [] },
+            pension: { label: "Pensión (16%)", values: [] },
+            arl: { label: "ARL (0.522%)", values: [] },
+            rete: { label: `Retención (${retePct}%)`, values: [], className: 'row-rete' },
+            net: { label: "NETO (Bancos)", values: [], className: 'row-neto' },
+            surplus: { label: "SOBRA (Tras Gastos)", values: [], className: 'row-final' }
+        };
+
+        // Calcular por cada salario en el array
+        salaries.forEach(usd => {
+            // Header
+            theadHtml += `<th>${usd} USD <span class="delete-col" onclick="removeSalary(${usd})">✕</span></th>`;
+
+            // Cálculos
+            const gross = usd * trm;
+            let ibc = Math.max(gross * 0.40, smmlv); // 40% o Mínimo
+
+            const health = ibc * 0.125;
+            const pension = ibc * 0.16;
+            const arl = ibc * 0.00522;
+            
+            // Retención sobre el bruto (común en cuentas de cobro)
+            const rete = gross * (retePct / 100);
+
+            const totalDeductions = health + pension + arl + rete;
+            const net = gross - totalDeductions;
+            const surplus = net - expenses;
+
+            // Push values
+            data.gross.values.push(gross);
+            data.ibc.values.push(ibc);
+            data.health.values.push(health);
+            data.pension.values.push(pension);
+            data.arl.values.push(arl);
+            data.rete.values.push(rete);
+            data.net.values.push(net);
+            data.surplus.values.push(surplus);
+        });
+
+        theadHtml += `</tr></thead>`;
+
+        // Construir el Body
+        let tbodyHtml = '<tbody>';
+        const keys = ['gross', 'health', 'pension', 'arl', 'rete', 'net', 'surplus']; // IBC lo omití para ahorrar espacio visual, pero puedes añadirlo si quieres
+
+        keys.forEach(key => {
+            const row = data[key];
+            const cssClass = row.className ? ` class="${row.className}"` : '';
+            tbodyHtml += `<tr${cssClass}><td>${row.label}</td>`;
+            row.values.forEach(val => {
+                tbodyHtml += `<td>${formatCOP(val)}</td>`;
+            });
+            tbodyHtml += `</tr>`;
+        });
+        tbodyHtml += '</tbody>';
+
+        document.getElementById('salaryTable').innerHTML = theadHtml + tbodyHtml;
+    }
+
+    // Inicializar
+    calculate();
+</script>
+
+</body>
+</html>
